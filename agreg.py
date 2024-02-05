@@ -7,6 +7,7 @@ agreg = Flask(__name__)
 ngrok_url_knn = " https://3ea5-89-30-29-68.ngrok-free.app" 
 ngrok_url_reg = "https://ab27-89-30-29-68.ngrok-free.app"  
 ngrok_url_svc = "https://0091-89-30-29-68.ngrok-free.app"
+ngrok_url_tree = "https://c045-89-30-29-68.ngrok-free.app"
 
 @agreg.route('/predict', methods=['GET'])
 def predict_aggregator():
@@ -19,21 +20,26 @@ def predict_aggregator():
         data_knn = response_knn.json()
         predicted_category_knn = data_knn['predicted_species']
         
+        response_tree = requests.get(f'{ngrok_url_tree}/predict', params={'feature_1': input_data[0], 'feature_2': input_data[1], 'feature_3': input_data[2], 'feature_4': input_data[3]})
+        data_tree = response_tree.json()
+        predicted_category_tree = data_tree['predicted_species']
+        
         response_svc = requests.get(f'{ngrok_url_svc}/predict', params={'feature_1': input_data[0], 'feature_2': input_data[1], 'feature_3': input_data[2], 'feature_4': input_data[3]})
         data_svc = response_svc.json()
         predicted_category_svc = data_svc['predicted species']
 
-        # Make a request to the other model's API
+        
         #response_reg = requests.get(f'{ngrok_url_reg}/predict', params={'feature_1': input_data[0], 'feature_2': input_data[1], 'feature_3': input_data[2], 'feature_4': input_data[3]})
         #data_reg = response_reg.json()
         #predicted_category_reg = data_reg['predicted_species']
 
         # Combine or aggregate the predictions (for example, take the average)
-        consensus_prediction = (predicted_category_knn + predicted_category_svc) / 3
+        consensus_prediction = (predicted_category_knn + predicted_category_svc + predicted_category_tree) / 3
 
         # Return the consensus prediction as JSON
         return jsonify({'consensus_prediction': consensus_prediction,
                         'prediction svc': predicted_category_svc,
+                        'prediction Decision tree': predicted_category_tree,
                         'prediction linear knn': predicted_category_knn})
 
     except Exception as e:
