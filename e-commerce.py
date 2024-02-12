@@ -1,35 +1,32 @@
 from flask import Flask, jsonify, request
+from flaskext.mysql import MySQL
+from datetime import date
 
 app = Flask(__name__)
 
-# Sample data
-products = []
+# Configuration de la base de données MySQL
+app.config['MYSQL_DATABASE_HOST'] = 'localhost'
+app.config['MYSQL_DATABASE_USER'] = 'root'
+app.config['MYSQL_DATABASE_PASSWORD'] = 'root'
+app.config['MYSQL_DATABASE_DB'] = 'nextapp'
 
-orders = []
-carts = {}
+mysql = MySQL(app)
 
 last_product_id = 0
 last_orders_id = 0
 # Products Routes
 @app.route('/products', methods=['GET'])
 def get_products():
-    category = request.args.get('category')
-    in_stock = request.args.get('in_stock')
-
-    filtered_products = products.copy()
-
-    if category:
-        filtered_products = [product for product in filtered_products if product['category'] == category]
-
-    if in_stock is not None:
-        in_stock_bool = in_stock.lower() == 'true'
-        filtered_products = [product for product in filtered_products if product['in_stock'] == in_stock_bool]
-
-    return jsonify(filtered_products)
+    cur = mysql.get_db().cursor()
+    cur.execute("SELECT * FROM product")
+    product = cur.fetchall()
+    return jsonify(product)
 
 @app.route('/products/<int:id>', methods=['GET'])
 def get_product(id):
-    product = next((product for product in products if product['id'] == id), None)
+    cur = mysql.get_db().cursor()
+    cur.execute("SELECT * FROM product WHERE id = %s", (id,))
+    product = cur.fetchone()
     if product:
         return jsonify(product)
     else:
@@ -37,72 +34,69 @@ def get_product(id):
 
 @app.route('/products', methods=['POST'])
 def add_product():
-    global last_product_id
     data = request.json
-    last_product_id += 1
-    data['id'] = last_product_id
-    products.append(data)
+    cur = mysql.get_db().cursor()
+    cur.execute("INSERT INTO product (category, name, description, price) VALUES (%s, %s, %s, %s)",
+                (data['category'], data['name'], data['description'], data['price']))
+    mysql.get_db().commit()
     return jsonify(data), 201
 
 @app.route('/products/<int:id>', methods=['PUT'])
 def update_product(id):
-    product = next((product for product in products if product['id'] == id), None)
-    if product:
-        data = request.json
-        product.update(data)
-        return jsonify(product)
-    else:
-        return jsonify({'message': 'Product not found'}), 404
+    data = request.json
+    cur = mysql.get_db().cursor()
+    cur.execute("UPDATE product SET name=%s, description=%s, price=%s, category=%s WHERE id=%s",
+                (data['name'], data['description'], data['price'], data['category'], id))
+    mysql.get_db().commit()
+    return jsonify(data)
 
 @app.route('/products/<int:id>', methods=['DELETE'])
 def delete_product(id):
-    global products
-    products = [product for product in products if product['id'] != id]
+    cur = mysql.get_db().cursor()
+    cur.execute("DELETE FROM product WHERE id = %s", (id))
+    mysql.get_db().commit()
     return jsonify({'message': 'Product deleted successfully'}), 200
 
 # Orders Routes
 @app.route('/orders', methods=['POST'])
 def create_order():
-    global last_orders_id
     data = request.json
-    last_orders_id += 1
-    data['id'] = last_orders_id
-    orders.append(data)
+    cur = mysql.get_db().cursor()
+    cur.execute("INSERT INTO orders (product_id, quantity, user_id, date) VALUES (%s, %s, %s, %s)",
+                (data['product_id'], data['quantity'], data['user_id'], date.today()))
+    mysql.get_db().commit()
     return jsonify(data), 201
 
 @app.route('/orders/<int:user_id>', methods=['GET'])
 def get_orders(user_id):
-    user_orders = [order for order in orders if order.get('user_id') == user_id]
-    return jsonify(user_orders)
+    cur = mysql.get_db().cursor()
+    cur.execute("SELECT * FROM orders WHERE user_id = %s", (user_id))
+    orders = cur.fetchall()
+    return jsonify(orders)
 
 # Cart Routes
 @app.route('/cart/<int:user_id>', methods=['POST'])
 def add_to_cart(user_id):
     data = request.json
-    product_id = data.get('product_id')
-    quantity = data.get('quantity')
-
-    if not carts.get(user_id):
-        carts[user_id] = {}
-
-    if product_id in carts[user_id]:
-        carts[user_id][product_id] += quantity
-    else:
-        carts[user_id][product_id] = quantity
-
-    return jsonify(carts[user_id]), 200
+    cur = mysql.get_db().cursor()
+    cur.execute("INSERT INTO cart (product_id, quantity, user_id) VALUES (%s, %s, %s)",
+                (data['product_id'], data['quantity'],user_id))
+    mysql.get_db().commit()
+    return jsonify(data), 200
 
 @app.route('/cart/<int:user_id>', methods=['GET'])
 def get_cart(user_id):
-    return jsonify(carts.get(user_id, {})), 200
+    cur = mysql.get_db().cursor()
+    cur.execute("SELECT * FROM cart WHERE user_id = %s", (user_id,))
+    cart_items = cur.fetchall()
+    return jsonify(cart_items), 200
 
 @app.route('/cart/<int:user_id>/item/<int:product_id>', methods=['DELETE'])
 def remove_from_cart(user_id, product_id):
-    if carts.get(user_id) and product_id in carts[user_id]:
-        del carts[user_id][product_id]
-        return jsonify(carts[user_id]), 200
-    else:
-        return jsonify({'message': 'Item not found in the cart'}), 404
+    cur = mysql.get_db().cursor()
+    cur.execute("DELETE FROM cart WHERE user_id = %s AND product_id = %s", (user_id, product_id))
+    mysql.get_db().commit()
+    return jsonify({'message': 'Item removed from cart'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
